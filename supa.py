@@ -3,9 +3,9 @@ SUPABASE_URL = "https://olpoeceohhhckcxexwjc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9scG9lY2VvaGhoY2tjeGV4d2pjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzY0NzQwNSwiZXhwIjoyMDg5MjIzNDA1fQ.l2FcTHIt2I3a8zrckPVtxGt5-Vifif9YUUjDiZtJ8RY"
  
 import asyncio
- 
+import os
 from fastapi import HTTPException
- 
+
 from supabase import create_client, Client
 from typing import  Dict, Any
 from dotenv import load_dotenv 
