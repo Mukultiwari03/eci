@@ -1,6 +1,6 @@
 
-SUPABASE_URL = "https://olpoeceohhhckcxexwjc.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9scG9lY2VvaGhoY2tjeGV4d2pjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzY0NzQwNSwiZXhwIjoyMDg5MjIzNDA1fQ.l2FcTHIt2I3a8zrckPVtxGt5-Vifif9YUUjDiZtJ8RY"
+SUPABASE_URL = "https://ctxjdwufqttrgramteqd.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0eGpkd3VmcXR0cmdyYW10ZXFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTQyMjcsImV4cCI6MjA4ODgzMDIyN30.B-xwDBvCbznHZdYugBM2JP2NEcxJJTkZbN97NmO8p6M"
  
 import asyncio
 import os
@@ -8,9 +8,12 @@ from fastapi import HTTPException
 
 from supabase import create_client, Client
 from typing import  Dict, Any
-from dotenv import load_dotenv 
-SUPABASE_URL= os.getenv("SUPABASE_URL")
-SUPABASE_KEY= os.getenv("SUPABASE_KEY")
+from dotenv import load_dotenv
+load_dotenv() 
+# SUPABASE_URL=os.getenv("SUPABASE_URL")
+# SUPABASE_KEY=os.getenv("SUPABASE_KEY")
+# SUPABASE_URL="https://mukjajpmohydgwxqimeg.supabase.co"
+# SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11a2phanBtb2h5ZGd3eHFpbWVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2MDIzMjMsImV4cCI6MjA4NzE3ODMyM30.Ff1q1z0vth9oKOO8eYp_aiLv7zHpsZgcp983NhnI0No"
  
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
  

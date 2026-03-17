@@ -1,144 +1,185 @@
 import os
 import cv2
-import pytesseract
-import cutbox
-from PIL import Image
-import re
-from concurrent.futures import ProcessPoolExecutor
+import numpy as np
+from pdf2image import convert_from_path
 from dotenv import load_dotenv 
 
-load_dotenv() 
-pytesseract.pytesseract.tesseract_cmd = os.getenv("TESSERACT_CMD")
+#working fine but need some refinements
+load_dotenv()
+PDF_PATH = ""
+PAGES_DIR = "pdf_pages"
+OUTPUT_DIR = "voter_boxes"
+DPI = 300
  
-PDF_PATH = os.getenv("PDF_PATH")
-VOTER_BOXES_DIR = "voter_boxes"
-
-# DEBUG_DIR = "debug_ocr_crops"
-# os.makedirs(DEBUG_DIR, exist_ok=True)
- 
- 
-def crop_epic_region(image_path):
-    img = cv2.imread(image_path)
-    h, w = img.shape[:2]
-    
-    # Adjusted crop coordinates to avoid touching the right/top black borders
-    # which Tesseract often mistakes for the letter 'I', 'L', or '1'
-    crop = img[int(h*0.03):int(h*0.18), int(w*0.45):int(w*0.98)]
-    
-    return crop
-
-
-def preprocess_for_ocr(crop_img):
-    """Prepares image specifically for optimal Tesseract OCR"""
-    # 1. Convert to Grayscale
-    gray = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
-    
-    # 2. Resize (Scale up 2.5x to reach Tesseract's optimal font size)
-    gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-    
-    # 3. Apply Otsu's Thresholding to make it pitch black text on pure white background
-    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    
-    # 4. Add a white border (padding). 
-    # Tesseract's PSM 7 relies on finding the text baseline. Edges touching the frame break it.
-    padded = cv2.copyMakeBorder(thresh, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=255)
-    
-    return padded
-
-
-def ocr_epic(crop_img, debug_filename=None):
-    try:
-        # Preprocess the crop
-        processed_img = preprocess_for_ocr(crop_img)
-        
-        # --- NEW: Save the preprocessed image for visual inspection ---
-        # if debug_filename:
-        #     debug_path = os.path.join(DEBUG_DIR, debug_filename)
-        #     cv2.imwrite(debug_path, processed_img)
-        # --------------------------------------------------------------
-
-        # Convert to PIL
-        pil_img = Image.fromarray(processed_img)
-        
-        # Whitelist & Single Line mode
-        custom_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/'
-        
-        text = pytesseract.image_to_string(pil_img, config=custom_config)
-        text = text.strip().upper().replace(" ", "").replace("\n", "")
-        
-        # REGEX CLEANUP: Extract only the valid EPIC patterns
-        epic_pattern = r'([A-Z]{3}\d{7}|[A-Z]{2}/\d{2}/\d{3}/\d{6})'
-        match = re.search(epic_pattern, text)
-        
-        if match:
-            return match.group(1) 
-        else:
-            return text 
-            
-    except Exception as e:
-        print(f"OCR Error: {e}")
-        return ""
-
-
-def process_image(image_path):
-    crop = crop_epic_region(image_path)
-    
-    # --- NEW: Generate a unique name like "page_3_voter_15.png" ---
-    folder_name = os.path.basename(os.path.dirname(image_path)) # e.g., "page_3"
-    file_name = os.path.basename(image_path)                    # e.g., "voter_15.png"
-    debug_name = f"{folder_name}_{file_name}"
-    
-    text = ocr_epic(crop, debug_filename=debug_name)
-    text = ocr_epic(crop)
-
-    return text
+os.makedirs(PAGES_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
  
  
-def collect_all_images():
+# STEP 1 — PDF → JPEG (Skip if exists)
+poppler_path = os.getenv("POPPLER_PATH")
  
-    image_paths = []
+def convert_pdf_if_needed():
+    # images = [f for f in os.listdir(PAGES_DIR) if f.endswith(".png")]
  
-    for page_folder in os.listdir(VOTER_BOXES_DIR):
+    # if len(images) > 0:
+    #     print("✅ PDF already converted.")
+    #     return
  
-        if page_folder in ["page_1", "page_2"]:
+    print("Converting PDF to images...")
+ 
+    pages = convert_from_path(PDF_PATH, dpi=DPI,poppler_path=poppler_path)
+    total_pages = len(pages)
+ 
+    for i, page in enumerate(pages):
+        # skip first, second and last page
+        if i in (0, 1) or i == total_pages - 1:
             continue
  
-        page_path = os.path.join(VOTER_BOXES_DIR, page_folder)
+        path = os.path.join(PAGES_DIR, f"page_{i+1}.png")
+        page.save(path, "JPEG")
+        print("Saved:", path)
  
-        if not os.path.isdir(page_path):
+    print("✅ Conversion complete")
+ 
+ 
+# STEP 2 — PREPROCESS IMAGE
+ 
+ 
+def preprocess(img):
+ 
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+ 
+    binary = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        5
+    )
+ 
+    return binary
+ 
+ 
+# STEP 3 — DETECT ROWS
+ 
+ 
+def detect_rows(binary):
+ 
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (80, 5))
+    merged = cv2.dilate(binary, kernel, iterations=2)
+ 
+    projection = np.sum(merged, axis=1)
+ 
+    rows = []
+    start = None
+    threshold = np.max(projection) * 0.2
+ 
+    for i, val in enumerate(projection):
+ 
+        if val > threshold and start is None:
+            start = i
+ 
+        elif val <= threshold and start is not None:
+            rows.append((start, i))
+            start = None
+ 
+    return rows
+ 
+ 
+# STEP 4 — DETECT COLUMNS
+ 
+ 
+def detect_columns(binary):
+ 
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 80))
+    merged = cv2.dilate(binary, kernel, iterations=2)
+ 
+    projection = np.sum(merged, axis=0)
+ 
+    cols = []
+    start = None
+    threshold = np.max(projection) * 0.2
+ 
+    for i, val in enumerate(projection):
+ 
+        if val > threshold and start is None:
+            start = i
+ 
+        elif val <= threshold and start is not None:
+            cols.append((start, i))
+            start = None
+ 
+    return cols
+ 
+ 
+# STEP 5 — EXTRACT VOTER BOXES
+ 
+ 
+def extract_voters():
+ 
+    for page_name in sorted(os.listdir(PAGES_DIR)):
+ 
+ 
+        if not page_name.endswith(".png"):
+            continue
+        if page_name=="page_1.png" or page_name=="page_2.png":
             continue
  
-        for file in os.listdir(page_path):
+        print("\nProcessing:", page_name)
  
-            if file.endswith(".png"):
-                image_paths.append(os.path.join(page_path, file))
+        img_path = os.path.join(PAGES_DIR, page_name)
+        img = cv2.imread(img_path)
  
-    return image_paths
+        binary = preprocess(img)
  
+        rows = detect_rows(binary)
+        cols = detect_columns(binary)
+ 
+        print(f"Detected Rows: {len(rows)} | Columns: {len(cols)}")
+ 
+        page_output = os.path.join(
+            OUTPUT_DIR,
+            page_name.replace(".png", "")
+        )
+ 
+        os.makedirs(page_output, exist_ok=True)
+ 
+        voter_id = 1
+ 
+        for (y1, y2) in rows:
+            for (x1, x2) in cols:
+ 
+                crop = img[y1:y2, x1:x2]
+ 
+                # ignore tiny noise regions
+                if crop.shape[0] < 100 or crop.shape[1] < 100:
+                    continue
+ 
+                save_path = os.path.join(
+                    page_output,
+                    f"voter_{voter_id}.png"
+                )
+ 
+                cv2.imwrite(save_path, crop)
+                voter_id += 1
+ 
+        print(f"✅ Saved {voter_id-1} voters")
+ 
+ 
+# MAIN
  
 def main(pdf_path):
+    global PDF_PATH
+    PDF_PATH = pdf_path
+    convert_pdf_if_needed()
+    extract_voters()
  
-    cutbox.PDF_PATH = pdf_path
-    cutbox.main()
- 
-    image_paths = collect_all_images()
- 
-    print("Total images:", len(image_paths))
- 
-    epic_list = []
- 
-    with ProcessPoolExecutor() as executor:
- 
-        results = executor.map(process_image, image_paths)
- 
-        for text in results:
-            if text:
-                epic_list.append(text)
- 
-    print("Total EPICs:", len(epic_list))
-    print(epic_list)
-    return epic_list
+    print("\nDONE — One box per voter created.")
  
  
 if __name__ == "__main__":
-    main()
+    convert_pdf_if_needed()
+    extract_voters()
+ 
+    print("\nDONE — One box per voter created.")
