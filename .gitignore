@@ -1,0 +1,6 @@
+pdf_pages/
+__pycache__/
+venv/
+voter_boxes/
+.env
+.python-version
