@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+pdf_pages/
+voter_boxes/
+rolls/
+.env
